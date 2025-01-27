@@ -185,7 +185,7 @@ config DRM_PANEL_HIMAX_HX8394
 
 	  If M is selected the module will be called panel-himax-hx8394.
 
-config DRM_PANEL_HUAEI_BOENT51021
+config DRM_PANEL_HUAWEI_BOENT51021
 	tristate "Boe NT51021 panel"
 	depends on OF
 	depends on DRM_MIPI_DSI
