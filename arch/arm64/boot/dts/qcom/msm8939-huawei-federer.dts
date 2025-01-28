@@ -25,7 +25,7 @@
 	};
 
 	chosen {
-		stdout-path = "serial0";
+		stdout-path = "serial0:115200n8";
 	};
 
 	reserved-memory {
@@ -427,7 +427,7 @@
 		//compatible = "boe,huawei-nt51021";
 		//compatible = "novatek,nt51021";
 		//compatible = "huawei,boe-nt51021";
-		compatible = "huawei,federer-panel", "huawei,boe-nt51021";
+		compatible = "huawei,federer-panel";
 		reg = <0>;
 
 		vddio-supply = <&pm8916_l6>;
