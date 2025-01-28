@@ -10,11 +10,10 @@
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/leds/common.h>
 #include <dt-bindings/pinctrl/qcom,pmic-gpio.h>
-//#include <dt-bindings/sound/apq8016-lpass.h>
 #include <dt-bindings/pinctrl/qcom,pmic-mpp.h>
 
 / {
-	model = "Huawei MediaPad T2 Pro 10.0";
+	model = "Huawei MediaPad T2 10.0 Pro";
 	compatible = "huawei,federer", "qcom,msm8939";
 	chassis-type = "tablet";
 
@@ -38,6 +37,11 @@
 
 		reserved@84400000 {
 			reg = <0x0 0x84400000 0x0 0x1C00000>;
+			no-map;
+		};
+
+		tz-hwlog@8c700000 {
+			reg = <0x0 0x8c700000 0x0 0x400000>;
 			no-map;
 		};
 
@@ -310,8 +314,7 @@
 		compatible = "linux,extcon-usb-gpio";
 		id-gpios = <&tlmm 117 GPIO_ACTIVE_HIGH>;
 		pinctrl-0 = <&usb_id_default>;
-		//pinctrl-1 = <&usb_id_sleep>;
-		pinctrl-names = "default";//, "sleep";
+		pinctrl-names = "default";
 	};
 };
 
@@ -361,7 +364,7 @@
 
 &blsp_i2c4 {
 	status = "okay";
-	charger: bq24192@6b {
+	charger: bq24296@6b {
 		compatible = "ti,bq24296";
 		reg = <0x6b>;
 		interrupt-parent = <&tlmm>;
@@ -402,6 +405,10 @@
 	};
 };
 
+&blsp_uart2 {
+	status = "okay";
+};
+
 &gpu {
 	status = "okay";
 };
@@ -423,20 +430,13 @@
 		compatible = "huawei,federer-panel", "huawei,boe-nt51021";
 		reg = <0>;
 
-		//backlight = <&backlight>;
-		//pp1800-supply = <&pm8916_l6>;
-		//pp3300-supply = <&lcd_pp3300>;
 		vddio-supply = <&pm8916_l6>;
 		vsp-supply = <&reg_lcd_vsp>;
 		vsn-supply = <&reg_lcd_vsn>;
-		//iovcc-supply = <&pm8916_l6>;
-		//bias-supply = <&reg_lcd_bias>;
 		power-gpios = <&tlmm 32 GPIO_ACTIVE_HIGH>;
 		blpower-gpios = <&tlmm 109 GPIO_ACTIVE_HIGH>;
-		//vci-gpios = <&tlmm 32 GPIO_ACTIVE_HIGH>;
 		backlight-gpios = <&tlmm 97 GPIO_ACTIVE_HIGH>;
 
-		//reset-gpios = <&tlmm 25 GPIO_ACTIVE_HIGH>;
 		reset-gpios = <&tlmm 25 GPIO_ACTIVE_LOW>;
 		te-gpios = <&tlmm 24 GPIO_ACTIVE_HIGH>;
 
@@ -457,13 +457,6 @@
 	qcom,dsi-phy-regulator-ldo-mode;
 	status = "okay";
 };
-
-/*&mpss {
-	pinctrl-0 = <&sim_en_default>;
-	pinctrl-names = "default", "sleep";
-
-	//firmware-name = "qcom/apq8016/mba.mbn", "qcom/apq8016/modem.mbn";
-};*/
 
 &mpss_mem {
 	reg = <0x0 0x86800000 0x0 0x5600000>;
@@ -681,7 +674,7 @@
 	//extcon = <&usb_id>, <&usb_id>;
 	extcon = <&charger>, <&usb_id>;
 	vbus-supply = <&usb_otg_vbus>;
-	usb-role-switch;
+	//usb-role-switch;
 
 	status = "okay";
 };
@@ -697,7 +690,6 @@
 
 &wcnss {
 	status = "okay";
-	//firmware-name = "qcom/apq8016/wcnss.mbn";
 };
 
 &wcnss_iris {
@@ -802,20 +794,6 @@
 		bias-disable;
 	};
 
-	sim_en_default: sim-en-default-state {
-		pins = "gpio60";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-disable;
-	};
-
-	sim_en_sleep: sim-en-sleep-state {
-		pins = "gpio60";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-pull-down;
-	};
-
 	speaker_amp_default: speaker-amp-default-state {
 		pins = "gpio3";//, "gpio1", "gpio2", "gpio0";
 		function = "gpio";
@@ -896,19 +874,16 @@
 };
 
 / {
-    fuel-gauge {
-	    compatible = "adc-battery";
-	   // #address-cells = <1>;
-	    //#size-cells = <0>;
+	fuel-gauge {
+	compatible = "adc-battery";
+	// #address-cells = <1>;
+	//#size-cells = <0>;
 
-	   	//io-channels = <&pm8916_vadc VADC_VBAT_SNS>;//, <&pm8916_vadc VADC_LR_MUX1_BAT_THERM>; //VADC_VBAT_SNS,VADC_LR_MUX1_BAT_THERM
-	    	//io-channel-names = "voltage";//, "temperature"; //l=100 v=4161 t=3457300.0 h=2 st=2 chg=u
-	    	
 		io-channels = <&pm8916_vadc 0x6>;//, <&pm8916_vadc 0x30>;//, <&pm8916_vadc 0x11>;
 		io-channel-names = "voltage";//, "temperature";//, "current";
 
-	    //charged-gpios = <&tlmm 62>;
-	    monitored-battery = <&battery>;
-	    power-supplies = <&charger>;
-    };
+		//charged-gpios = <&tlmm 62>;
+		monitored-battery = <&battery>;
+		power-supplies = <&charger>;
+	};
 };
