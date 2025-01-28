@@ -870,6 +870,6 @@
 
 		//charged-gpios = <&tlmm 62>;
 		monitored-battery = <&battery>;
-		power-supplies = <&charger>;
+		//power-supplies = <&charger>;
 	};
 };
