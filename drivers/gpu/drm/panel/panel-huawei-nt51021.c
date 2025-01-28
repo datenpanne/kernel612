@@ -1,325 +1,403 @@
-// SPDX-License-Identifier: GPL-2.0-only
-// Copyright (c) 2024 FIXME
-// Generated with linux-mdss-dsi-panel-driver-generator from vendor device tree:
-//   Copyright (c) 2013, The Linux Foundation. All rights reserved. (FIXME)
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (c) 2018 MediaTek Inc.
+ * Author: Jitao Shi <jitao.shi@mediatek.com>
+ */
 
 #include <linux/backlight.h>
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
 #include <linux/module.h>
-#include <linux/mutex.h>
 #include <linux/of.h>
+#include <linux/of_device.h>
 #include <linux/regulator/consumer.h>
-#include <video/mipi_display.h>
 
+#include <drm/drm_connector.h>
+#include <drm/drm_crtc.h>
 #include <drm/drm_mipi_dsi.h>
-#include <drm/drm_modes.h>
 #include <drm/drm_panel.h>
 
-struct huawei_nt51021 {
-	struct drm_panel panel;
+#include <video/mipi_display.h>
+
+#define HW_NT51021_VND_MIPI 0x8f
+#define HW_NT51021_VND_INDEX0 0x83
+#define HW_NT51021_VND_INDEX1 0x84
+
+#define HW_NT51021_SET_DISPLAY_BRIGHTNESS 0x9f
+#define HW_NT51021_CABC_MODE 0x90 // 0xc0 off | 0x00 on
+#define HW_NT51021_CABC_DIMMING 0x95 // 0xB0 off | 0x60 on
+
+struct panel_desc {
+	const struct drm_display_mode *modes;
+	unsigned int bpc;
+
+	/**
+	 * @width_mm: width of the panel's active display area
+	 * @height_mm: height of the panel's active display area
+	 */
+	struct {
+		unsigned int width_mm;
+		unsigned int height_mm;
+	} size;
+
+	unsigned long mode_flags;
+	enum mipi_dsi_pixel_format format;
+	const struct panel_init_cmd *init_cmds;
+	unsigned int lanes;
+};
+
+struct boe_panel {
+	struct drm_panel base;
 	struct mipi_dsi_device *dsi;
 
-	struct mutex mutex;
+	const struct panel_desc *desc;
 
-	//struct regulator *vddio;
-	//struct regulator *lcd_bias;
+	enum drm_panel_orientation orientation;
+
 	struct regulator *vddio;
 	struct regulator *vsp;
 	struct regulator *vsn;
-	//struct regulator *pp3300;
+	struct gpio_desc *power_gpio;
+	struct gpio_desc *blpwr_gpio;
+	struct gpio_desc *vled_gpio;
 	struct gpio_desc *reset_gpio;
-	struct gpio_desc *disp_power_panel;
-	struct gpio_desc *disp_power_backlight;
-	struct gpio_desc *disp_en_gpio_vled;
 
-	u32 inversion_mode;
-	u32 inversion_state;
+	int hw_led_en_flag;
 };
 
-#define NOVATEK_NT51021_DATA_SEND 0x8F //Force sending by MIPI
-#define NOVATEK_NT51021_PAGE1 0x83
-#define NOVATEK_NT51021_PAGE2 0x84
-#define NOVATEK_NT51021_GOP 0x8c
-#define NOVATEK_NT51021_3DUMMY 0xcd
-#define NOVATEK_NT51021_CABC 0x90
-#define NOVATEK_NT51021_GCH 0xc8
-#define NOVATEK_NT51021_RESISTOR 0x97
-#define NOVATEK_NT51021_BACKLIGHT 0x9f
-#define NOVATEK_NT51021_IC_MIPI_RX 0xa9
-#define NOVATEK_NT51021_TESTMODE1 0x85
-#define NOVATEK_NT51021_TESTMODE2 0x86
-#define NOVATEK_NT51021_TESTMODE3 0x9c
+enum dsi_cmd_type {
+	//INIT_GEN_CMD,
+	INIT_DCS_CMD,
+	DELAY_CMD,
+};
 
-#define UNKNOWN_NT51021_A1 0xa1
-#define UNKNOWN_NT51021_A2 0xa2
-#define UNKNOWN_NT51021_A3 0xa3
-#define UNKNOWN_NT51021_A4 0xa4
-#define UNKNOWN_NT51021_A5 0xa5
-#define UNKNOWN_NT51021_A6 0xa6
-#define UNKNOWN_NT51021_A7 0xa7
-#define UNKNOWN_NT51021_A8 0xa8
-#define UNKNOWN_NT51021_A9 0xA9
-#define UNKNOWN_NT51021_AA 0xaa
-#define UNKNOWN_NT51021_AD 0xAD
-#define UNKNOWN_NT51021_B4 0xb4
-#define UNKNOWN_NT51021_B5 0xb5
-#define UNKNOWN_NT51021_B6 0xb6
-#define UNKNOWN_NT51021_C0 0xC0
-#define UNKNOWN_NT51021_9A 0x9a
-#define UNKNOWN_NT51021_90 0x90
-#define UNKNOWN_NT51021_91 0x91
-#define UNKNOWN_NT51021_94 0x94
-#define UNKNOWN_NT51021_95 0x95
-#define UNKNOWN_NT51021_96 0x96
-#define UNKNOWN_NT51021_99 0x99
+struct panel_init_cmd {
+	enum dsi_cmd_type type;
+	size_t len;
+	const char *data;
+};
 
-static inline
-struct huawei_nt51021 *to_huawei_nt51021(struct drm_panel *panel)
+#define _INIT_DCS_CMD(...) { \
+	.type = INIT_DCS_CMD, \
+	.len = sizeof((char[]){__VA_ARGS__}), \
+	.data = (char[]){__VA_ARGS__} }
+
+#define _INIT_DELAY_CMD(...) { \
+	.type = DELAY_CMD,\
+	.len = sizeof((char[]){__VA_ARGS__}), \
+	.data = (char[]){__VA_ARGS__} }
+
+static const struct panel_init_cmd boe_nt51021_10_init_cmd[] = {
+	_INIT_DCS_CMD(0x8f, 0xa5),
+	_INIT_DELAY_CMD(2),
+	_INIT_DCS_CMD(0x83, 0xbb),
+	_INIT_DCS_CMD(0x84, 0x22),
+	_INIT_DCS_CMD(0x90, 0x00),
+	_INIT_DCS_CMD(0xa1, 0xff),
+	_INIT_DCS_CMD(0xa2, 0xfe),
+	_INIT_DCS_CMD(0xa3, 0xf7),
+	_INIT_DCS_CMD(0xa4, 0xf1),
+	_INIT_DCS_CMD(0xa5, 0xe9),
+	_INIT_DCS_CMD(0xa6, 0xe2),
+	_INIT_DCS_CMD(0xa7, 0xdc),
+	_INIT_DCS_CMD(0xa8, 0xd7),
+	_INIT_DCS_CMD(0xa9, 0xd1),
+	_INIT_DCS_CMD(0xaa, 0xcc),
+	_INIT_DCS_CMD(0xb4, 0x42),
+	_INIT_DCS_CMD(0xb5, 0x5b),
+	_INIT_DCS_CMD(0xb6, 0x4f),
+	_INIT_DCS_CMD(0xAD, 0x03),
+	_INIT_DCS_CMD(0x9a, 0x10),
+	_INIT_DCS_CMD(0x94, 0xb8),
+	_INIT_DCS_CMD(0x95, 0x00),
+	_INIT_DCS_CMD(0x99, 0x00),
+	_INIT_DCS_CMD(0x96, 0x00),
+	_INIT_DCS_CMD(0x83, 0x00),
+	_INIT_DCS_CMD(0x84, 0x00),
+	_INIT_DCS_CMD(0x8C, 0x80),
+	_INIT_DCS_CMD(0xCD, 0x6C),
+	_INIT_DCS_CMD(0xC0, 0x8B),
+	_INIT_DCS_CMD(0xC8, 0xF0),
+	_INIT_DCS_CMD(0x8B, 0x10),
+	_INIT_DCS_CMD(0xA9, 0x0A),
+	_INIT_DCS_CMD(0x97, 0x00),
+	//_INIT_DCS_CMD(0x9f, 0x66),
+	_INIT_DCS_CMD(0x83, 0xaa),
+	_INIT_DCS_CMD(0x84, 0x11),
+	_INIT_DCS_CMD(0xa9, 0x4b),
+	_INIT_DCS_CMD(0x85, 0x04),
+	_INIT_DCS_CMD(0x86, 0x08),
+	_INIT_DCS_CMD(0x9c, 0x10),
+	//_INIT_DCS_CMD(0x11),
+	//_INIT_DELAY_CMD(120),
+	{},
+};
+
+static const struct panel_init_cmd cmi_nt51021_10_init_cmd[] = {
+	//_INIT_DCS_CMD(0x21),
+	_INIT_DCS_CMD(HW_NT51021_VND_MIPI, 0xa5),
+	_INIT_DELAY_CMD(20),
+	_INIT_DCS_CMD(0x01),
+	_INIT_DELAY_CMD(20),
+	_INIT_DCS_CMD(HW_NT51021_VND_MIPI, 0xa5),
+	_INIT_DELAY_CMD(20),
+	_INIT_DCS_CMD(0x83, 0xBB),
+	_INIT_DCS_CMD(0x84, 0x22),
+	_INIT_DCS_CMD(0x96, 0x00),
+	_INIT_DCS_CMD(0x90, 0xC0),
+	_INIT_DCS_CMD(0x91, 0xA0),
+	_INIT_DCS_CMD(0x9A, 0x10),
+	_INIT_DCS_CMD(0x94, 0x78),
+	_INIT_DCS_CMD(0x95, 0xB0),
+	_INIT_DCS_CMD(0xA1, 0xFF),
+	_INIT_DCS_CMD(0xA2, 0xFA),
+	_INIT_DCS_CMD(0xA3, 0xF3),
+	_INIT_DCS_CMD(0xA4, 0xED),
+	_INIT_DCS_CMD(0xA5, 0xE7),
+	_INIT_DCS_CMD(0xA6, 0xE2),
+	_INIT_DCS_CMD(0xA7, 0xDC),
+	_INIT_DCS_CMD(0xA8, 0xD7),
+	_INIT_DCS_CMD(0xA9, 0xD1),
+	_INIT_DCS_CMD(0xAA, 0xCC),
+	_INIT_DCS_CMD(0xB4, 0x1C),
+	_INIT_DCS_CMD(0xB5, 0x38),
+	_INIT_DCS_CMD(0xB6, 0x30),
+	_INIT_DCS_CMD(0x83, 0x00),
+	_INIT_DCS_CMD(0x84, 0x00),
+	_INIT_DCS_CMD(0x8C, 0x80),
+	_INIT_DCS_CMD(0xC7, 0x50),
+	_INIT_DCS_CMD(0xC5, 0x50),
+	_INIT_DCS_CMD(0x85, 0x04),
+	_INIT_DCS_CMD(0x86, 0x08),
+	_INIT_DCS_CMD(0xA9, 0x2A),
+	_INIT_DCS_CMD(0x83, 0xAA),
+	_INIT_DCS_CMD(0x84, 0x11),
+	_INIT_DCS_CMD(0x9C, 0x10),
+	_INIT_DCS_CMD(0xA9, 0x4B),
+	{},
+};
+
+
+static inline struct boe_panel *to_boe_panel(struct drm_panel *panel)
 {
-	return container_of(panel, struct huawei_nt51021, panel);
+	return container_of(panel, struct boe_panel, base);
 }
 
-static void huawei_nt51021_reset(struct huawei_nt51021 *ctx)
+static int boe_panel_init_cmd(struct boe_panel *boe)
 {
-	gpiod_direction_output(ctx->reset_gpio, 0);
-	msleep(200);
-	//usleep_range(1000, 2000);
-	gpiod_direction_output(ctx->reset_gpio, 1);
-	msleep(200);
-	gpiod_direction_output(ctx->reset_gpio, 0);
-	msleep(300);
-}
+	struct mipi_dsi_device *dsi = boe->dsi;
+	struct drm_panel *panel = &boe->base;
+	int i, err = 0;
 
-static void huawei_nt51021_power(struct huawei_nt51021 *ctx, int enable)
-{
-	gpiod_direction_output(ctx->disp_power_panel, enable);
-	usleep_range(300000, 350000);
-	gpiod_direction_output(ctx->disp_power_backlight, enable);
-	usleep_range(15000, 25000);
-}
+	if (boe->desc->init_cmds) {
+		const struct panel_init_cmd *init_cmds = boe->desc->init_cmds;
 
-static void huawei_nt51021_regulator_power_on(struct huawei_nt51021 *ctx)
-{
-	regulator_enable(ctx->vddio);
-	msleep(30);
-	regulator_enable(ctx->vsp);
-	usleep_range(5000, 5100);
-	regulator_enable(ctx->vsn);
-	usleep_range(3000, 3500);
-}
+        //dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
-static void huawei_nt51021_regulator_power_off(struct huawei_nt51021 *ctx)
-{
-	regulator_enable(ctx->vddio);
-	msleep(30);
-	regulator_enable(ctx->vsp);
-	usleep_range(5000, 5100);
-	regulator_enable(ctx->vsn);
-	usleep_range(3000, 3500);
-}
+		for (i = 0; init_cmds[i].len != 0; i++) {
+			const struct panel_init_cmd *cmd = &init_cmds[i];
 
-static int huawei_nt51021_on(struct huawei_nt51021 *ctx)
-{
-	struct mipi_dsi_device *dsi = ctx->dsi;
-	struct device *dev = &dsi->dev;
-	int ret;
+			switch (cmd->type) {
+			case DELAY_CMD:
+				msleep(cmd->data[0]);
+				err = 0;
+				break;
 
-	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+			case INIT_DCS_CMD:
+				err = mipi_dsi_dcs_write(dsi, cmd->data[0],
+							 cmd->len <= 1 ? NULL :
+							 &cmd->data[1],
+							 cmd->len - 1);
+				break;
 
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_DATA_SEND, 0xA5);
-	mdelay(5);
+			default:
+				err = -EINVAL;
+			}
 
-	ret = mipi_dsi_dcs_soft_reset(dsi);
-	if (ret < 0) {
-		dev_err(dev, "Failed to do Software Reset (%d)\n", ret);
+			if (err < 0) {
+				dev_err(panel->dev,
+					"failed to write command %u\n", i);
+				return err;
+			}
+		}
 	}
-	usleep_range(19000, 21000);
-
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_DATA_SEND, 0xA5);
-	mdelay(1);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE1, 0xaa);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE2, 0x11);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_IC_MIPI_RX, 0x4b);
-	mdelay(10);
-	//mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_TESTMODE1, 0x04);
-	//mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_TESTMODE2, 0x08);
-	//mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_TESTMODE3, 0x10);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE1, 0xbb);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE2, 0x22);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_96, 0x00); //02 on lenovo
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_CABC, 0xc0);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_91, 0xa0);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_9A, 0x10);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_94, 0x78);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_95, 0xb1);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_A1, 0xff);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_A2, 0xfa);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_A3, 0xf3);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_A4, 0xed);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_A5, 0xe7);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_A6, 0xe2);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_A7, 0xdc);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_A8, 0xd7);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_A9, 0xd1);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_AA, 0xcc);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_B4, 0x1c);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_B5, 0x38);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_B6, 0x30);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE1, 0x00);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE2, 0x00);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_GOP, 0x80);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_3DUMMY, 0x6c);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_GCH, 0xfc);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_BACKLIGHT, 0x66);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_RESISTOR, 0x00);
-	//mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE1, 0x00);
-	//mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE2, 0x00);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE1, 0xaa);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE2, 0x11);
-
-	ret = mipi_dsi_dcs_exit_sleep_mode(dsi);
-	if (ret < 0) {
-		dev_err(dev, "Failed to exit sleep mode: %d\n", ret);
-		return ret;
-	}
-
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_DATA_SEND, 0x00);
-	mdelay(5);
-
 	return 0;
 }
-static int huawei_nt51021_panel_on(struct huawei_nt51021 *ctx)
+
+static void hw_nt51021_reset(struct boe_panel *boe)
 {
-	struct mipi_dsi_device *dsi = ctx->dsi;
-	struct device *dev = &ctx->dsi->dev;
-	int ret;
-
-	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
-
-	ret = mipi_dsi_dcs_set_display_on(dsi);
-	if (ret) {
-		dev_err(dev, "failed to turn display on (%d)\n", ret);
-		return ret;
-	}
-	usleep_range(80000, 85000);
-
-	return 0;
+	gpiod_direction_output(boe->reset_gpio, 0);
+	usleep_range(10000, 11000);
+	gpiod_direction_output(boe->reset_gpio, 1);
+	usleep_range(5000, 6000);
+	gpiod_direction_output(boe->reset_gpio, 0);
+	usleep_range(500, 600);
 }
-static int huawei_nt51021_off(struct huawei_nt51021 *ctx)
+
+static void hw_nt51021_bias_set(struct boe_panel *boe, int enabled)
 {
-	struct mipi_dsi_device *dsi = ctx->dsi;
-	struct device *dev = &ctx->dsi->dev;
+	//struct boe_panel *boe = to_boe_panel(panel);
+
+	gpiod_set_value(boe->vled_gpio, enabled);
+
+    if (enabled) {
+        boe->hw_led_en_flag = 1;
+    }
+    else {
+        boe->hw_led_en_flag = 0;
+    }
+}
+
+static int boe_panel_enter_sleep_mode(struct boe_panel *boe)
+{
+	struct mipi_dsi_device *dsi = boe->dsi;
 	int ret;
 
 	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
 
 	ret = mipi_dsi_dcs_set_display_off(dsi);
-	if (ret < 0) {
-		dev_err(dev, "Failed to set display OFF (%d)\n", ret);
-		return ret;
-	}
-	msleep(80);
-
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_DATA_SEND, 0xA5);
-	/*mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE1, 0xbb);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE2, 0x22);
-	mipi_dsi_dcs_write_seq(dsi, UNKNOWN_NT51021_96, 0x00);*/
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE1, 0x00);
-	mipi_dsi_dcs_write_seq(dsi, NOVATEK_NT51021_PAGE2, 0x00);
-	//mipi_dsi_dcs_write_seq(dsi, 0x10, 0x00);
-	ret = mipi_dsi_dcs_enter_sleep_mode(ctx->dsi);
-	if (ret < 0) {
-		dev_err(dev, "Failed to enter sleep mode (%d)\n", ret);
-		return ret;
-	}
-	msleep(100);
-
-	return 0;
-}
-
-static int huawei_nt51021_pre_prepare(struct huawei_nt51021 *ctx)//, unsigned int inversion_mode)
-{
-	struct mipi_dsi_device *dsi = ctx->dsi;
-	struct device *dev = &ctx->dsi->dev;
-	int ret;
-
-	huawei_nt51021_power(ctx, 1);
-	msleep(1);
-
-	huawei_nt51021_regulator_power_on(ctx);
-	usleep_range(1000, 5000);
-
-	mipi_dsi_dcs_nop(dsi);
-	usleep_range(1000, 2000);
-
-	huawei_nt51021_reset(ctx);
-	msleep(10);
-
-	ret = huawei_nt51021_on(ctx);
-
-	ret = huawei_nt51021_panel_on(ctx);
-
-	if (ret < 0) {
-		dev_err(dev, "Failed to initialize panel: %d\n", ret);
-		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
-		huawei_nt51021_power(ctx, 0);
-		huawei_nt51021_regulator_power_off(ctx);
-		usleep_range(1000, 5000);	
-		return ret;
-	}
-
-	ret = mipi_dsi_dcs_set_tear_on(dsi, MIPI_DSI_DCS_TEAR_MODE_VBLANK);
-	if (ret) {
-		dev_err(dev, "failed to set tear on (%d)\n", ret);
-		return ret;
-	}
-
-	gpiod_direction_output(ctx->disp_en_gpio_vled, 1);
-	msleep(100);
-
-	return 0;
-}
-
-static int huawei_nt51021_prepare(struct drm_panel *panel)
-{
-	struct huawei_nt51021 *ctx = to_huawei_nt51021(panel);
-	struct mipi_dsi_device *dsi = ctx->dsi;
-	struct device *dev = &ctx->dsi->dev;
-	int ret;
-
-	mutex_lock(&ctx->mutex);
-	huawei_nt51021_pre_prepare(ctx);//,1);
-	mutex_unlock(&ctx->mutex);
-
-	return 0;
-}
-static int huawei_nt51021_unprepare(struct drm_panel *panel)
-{
-	struct huawei_nt51021 *ctx = to_huawei_nt51021(panel);
-	struct mipi_dsi_device *dsi = ctx->dsi;
-	struct device *dev = &ctx->dsi->dev;
-	int ret;
-
-	ret = huawei_nt51021_off(ctx);
 	if (ret < 0)
-		dev_err(dev, "Failed to un-initialize panel: %d\n", ret);
+		return ret;
 
-	gpiod_set_value(ctx->reset_gpio, 1);
-	huawei_nt51021_power(ctx, 0);
-	msleep(1);
-	huawei_nt51021_regulator_power_off(ctx);
-	usleep_range(1000, 5000);
-	gpiod_direction_output(ctx->disp_en_gpio_vled, 0);
-	msleep(200);
-	//huawei_nt51021_power_off(ctx);
-	//regulator_disable(ctx->lcd_bias);
-	//msleep(200);
+	ret = mipi_dsi_dcs_enter_sleep_mode(dsi);
+	if (ret < 0)
+		return ret;
 
 	return 0;
 }
 
-static const struct drm_display_mode huawei_nt51021_mode = {
+static int boe_panel_disable(struct drm_panel *panel)
+{
+	struct boe_panel *boe = to_boe_panel(panel);
+	int ret;
+
+	ret = boe_panel_enter_sleep_mode(boe);
+	if (ret < 0) {
+		dev_err(panel->dev, "failed to set panel off: %d\n", ret);
+		return ret;
+	}
+
+	msleep(120);
+
+	return 0;
+}
+
+static int boe_panel_unprepare(struct drm_panel *panel)
+{
+	struct boe_panel *boe = to_boe_panel(panel);
+
+	gpiod_set_value(boe->blpwr_gpio, 0);
+	usleep_range(5000, 7000);
+
+	regulator_disable(boe->vsp);
+	regulator_disable(boe->vsn);
+	usleep_range(3000, 4000);
+
+	regulator_disable(boe->vddio);
+	gpiod_set_value(boe->power_gpio, 0);
+	msleep(300);
+
+	gpiod_set_value(boe->reset_gpio, 1);
+
+	return 0;
+}
+
+static int boe_panel_prepare(struct drm_panel *panel)
+{
+	struct boe_panel *boe = to_boe_panel(panel);
+	//struct mipi_dsi_device *dsi = boe->dsi;
+	int ret;
+
+	ret = regulator_enable(boe->vddio);
+	if (ret < 0)
+		return ret;
+	usleep_range(10000, 11000);
+
+	ret = regulator_enable(boe->vsp);
+	if (ret < 0)
+		//return ret;
+		goto poweroff1v8;
+
+	ret = regulator_enable(boe->vsn);
+	if (ret < 0)
+		goto poweroffvsp;
+	usleep_range(1000, 1100);
+
+	gpiod_set_value(boe->blpwr_gpio, 1);
+
+	gpiod_set_value(boe->power_gpio, 1);
+	//usleep_range(2000, 4000);
+	msleep(500);
+
+	hw_nt51021_reset(boe);
+	usleep_range(10000, 11000);
+
+	/*ret = mipi_dsi_dcs_set_tear_on(dsi, MIPI_DSI_DCS_TEAR_MODE_VBLANK);
+	if (ret < 0) {
+		dev_err(panel->dev, "Failed to set tear on: %d\n", ret);
+		return ret;
+	}
+
+	ret = mipi_dsi_dcs_set_display_on(dsi);
+	if (ret) {
+		dev_err(panel->dev, "failed to turn display on (%d)\n", ret);
+		return ret;
+	}
+	usleep_range(80000, 90000);*/
+
+	return 0;
+
+//poweroff:
+//	regulator_disable(boe->vsn);
+poweroffvsp:
+	regulator_disable(boe->vsp);
+	gpiod_set_value(boe->blpwr_gpio, 0);
+	gpiod_set_value(boe->power_gpio, 0);
+	usleep_range(2000, 4000);
+poweroff1v8:
+//	usleep_range(5000, 7000);
+	regulator_disable(boe->vddio);
+	gpiod_set_value(boe->reset_gpio, 1);
+
+	return ret;
+}
+
+static int boe_panel_enable(struct drm_panel *panel)
+{
+	struct boe_panel *boe = to_boe_panel(panel);
+	struct mipi_dsi_device *dsi = boe->dsi;
+	int ret;
+
+	usleep_range(20000, 30000);
+
+	hw_nt51021_bias_set(boe, 1);
+
+	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+
+	ret = boe_panel_init_cmd(boe);
+	if (ret < 0) {
+		dev_err(panel->dev, "failed to init panel: %d\n", ret);
+		//goto poweroff;
+		return ret;
+	}
+
+	ret = mipi_dsi_dcs_exit_sleep_mode(dsi);
+	if (ret < 0) {
+		dev_err(panel->dev, "Failed to exit sleep mode: %d\n", ret);
+		return ret;
+	}
+
+	ret = mipi_dsi_dcs_set_display_on(dsi);
+	if (ret) {
+		dev_err(panel->dev, "failed to turn display on (%d)\n", ret);
+		return ret;
+	}
+	usleep_range(10000, 11000);
+
+	return 0;
+}
+
+static const struct drm_display_mode boe_nt51021_10_default_mode = {
 	.clock = (1200 + 64 + 4 + 36) * (1920 + 104 + 2 + 24) * 60 / 1000,
 	.hdisplay = 1200,
 	.hsync_start = 1200 + 64,
@@ -329,50 +407,119 @@ static const struct drm_display_mode huawei_nt51021_mode = {
 	.vsync_start = 1920 + 104,
 	.vsync_end = 1920 + 104 + 2,
 	.vtotal = 1920 + 104 + 2 + 24,
-	.width_mm = 135,
-	.height_mm = 217,
 };
 
-static int huawei_nt51021_get_modes(struct drm_panel *panel,
-					  struct drm_connector *connector)
+static const struct panel_desc boe_nt51021_10_desc = {
+	.modes = &boe_nt51021_10_default_mode,
+	.bpc = 8,
+	.size = {
+		.width_mm = 135,
+		.height_mm = 217,
+	},
+	.lanes = 4,
+	.format = MIPI_DSI_FMT_RGB888,
+	.mode_flags =  MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_SYNC_PULSE |
+		      MIPI_DSI_MODE_LPM,
+	.init_cmds = boe_nt51021_10_init_cmd,
+};
+
+static const struct drm_display_mode cmi_nt51021_10_default_mode = {
+	.clock = (1200 + 64 + 4 + 36) * (1920 + 104 + 2 + 24) * 60 / 1000,
+	.hdisplay = 1200,
+	.hsync_start = 1200 + 64,
+	.hsync_end = 1200 + 64 + 4,
+	.htotal = 1200 + 64 + 4 + 36,
+	.vdisplay = 1920,
+	.vsync_start = 1920 + 104,
+	.vsync_end = 1920 + 104 + 2,
+	.vtotal = 1920 + 104 + 2 + 24,
+};
+
+static const struct panel_desc cmi_nt51021_10_desc = {
+	.modes = &cmi_nt51021_10_default_mode,
+	.bpc = 8,
+	.size = {
+		.width_mm = 135,
+		.height_mm = 217,
+	},
+	.lanes = 4,
+	.format = MIPI_DSI_FMT_RGB888,
+	.mode_flags = MIPI_DSI_MODE_VIDEO
+			| MIPI_DSI_MODE_VIDEO_BURST
+			| MIPI_DSI_MODE_VIDEO_HSE
+			| MIPI_DSI_MODE_NO_EOT_PACKET
+			| MIPI_DSI_CLOCK_NON_CONTINUOUS,
+	.init_cmds = cmi_nt51021_10_init_cmd,
+};
+
+static int boe_panel_get_modes(struct drm_panel *panel,
+			       struct drm_connector *connector)
 {
+	struct boe_panel *boe = to_boe_panel(panel);
+	const struct drm_display_mode *m = boe->desc->modes;
 	struct drm_display_mode *mode;
 
-	mode = drm_mode_duplicate(connector->dev, &huawei_nt51021_mode);
-	if (!mode)
+	mode = drm_mode_duplicate(connector->dev, m);
+	if (!mode) {
+		dev_err(panel->dev, "failed to add mode %ux%u@%u\n",
+			m->hdisplay, m->vdisplay, drm_mode_vrefresh(m));
 		return -ENOMEM;
-
-	drm_mode_set_name(mode);
+	}
 
 	mode->type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED;
-	connector->display_info.width_mm = mode->width_mm;
-	connector->display_info.height_mm = mode->height_mm;
+	drm_mode_set_name(mode);
 	drm_mode_probed_add(connector, mode);
+
+	connector->display_info.width_mm = boe->desc->size.width_mm;
+	connector->display_info.height_mm = boe->desc->size.height_mm;
+	connector->display_info.bpc = boe->desc->bpc;
+	/*
+	 * TODO: Remove once all drm drivers call
+	 * drm_connector_set_orientation_from_panel()
+	 */
+	drm_connector_set_panel_orientation(connector, boe->orientation);
 
 	return 1;
 }
 
-static const struct drm_panel_funcs huawei_nt51021_panel_funcs = {
-	.prepare = huawei_nt51021_prepare,
-	.unprepare = huawei_nt51021_unprepare,
-	.get_modes = huawei_nt51021_get_modes,
+static enum drm_panel_orientation boe_panel_get_orientation(struct drm_panel *panel)
+{
+	struct boe_panel *boe = to_boe_panel(panel);
+
+	return boe->orientation;
+}
+
+static const struct drm_panel_funcs boe_panel_funcs = {
+	.disable = boe_panel_disable,
+	.unprepare = boe_panel_unprepare,
+	.prepare = boe_panel_prepare,
+	.enable = boe_panel_enable,
+	.get_modes = boe_panel_get_modes,
+	.get_orientation = boe_panel_get_orientation,
 };
 
-static int huawei_nt51021_set_brightness(struct mipi_dsi_device *dsi,
+static int hw_nt51021_bl(struct mipi_dsi_device *dsi,
 					u16 brightness)
 {
-	const u8 chang_page0_index0[2] = {0x83, 0x00};
-	const u8 chang_page0_index1[2] = {0x84, 0x00};
+	const u8 vnd_mipi[2] = {HW_NT51021_VND_MIPI, 0xa5};
+	const u8 chang_page0_index0[2] = {HW_NT51021_VND_INDEX0, 0x00};
+	const u8 chang_page0_index1[2] = {HW_NT51021_VND_INDEX1, 0x00};
+	//const u8 brightness[2] = {HW_NT51021_SET_DISPLAY_BRIGHTNESS, 0x0};
 	u8 payload[2] = { brightness & 0xff, brightness >> 8 };
+	
 	int ret;
+
+	mipi_dsi_dcs_write_buffer(dsi, vnd_mipi,
+					ARRAY_SIZE(vnd_mipi));
 
 	mipi_dsi_dcs_write_buffer(dsi, chang_page0_index0,
 					ARRAY_SIZE(chang_page0_index0));
 
 	mipi_dsi_dcs_write_buffer(dsi, chang_page0_index1,
 					ARRAY_SIZE(chang_page0_index1));
+	usleep_range(1000, 2000);
 
-	ret = mipi_dsi_dcs_write(dsi, NOVATEK_NT51021_BACKLIGHT,
+	ret = mipi_dsi_dcs_write(dsi, HW_NT51021_SET_DISPLAY_BRIGHTNESS,
 				 payload, sizeof(payload));
 	if (ret < 0)
 		return ret;
@@ -380,156 +527,193 @@ static int huawei_nt51021_set_brightness(struct mipi_dsi_device *dsi,
 	return 0;
 }
 
-static int huawei_nt51021_bl_update_status(struct backlight_device *bl)
+static int hw_nt51021_bl_update_status(struct backlight_device *bl)
 {
 	struct mipi_dsi_device *dsi = bl_get_data(bl);
-	//struct huawei_nt51021 *ctx = mipi_dsi_get_drvdata(dsi);
-	//struct device *dev = &ctx->dsi->dev;
-	u16 brightness = backlight_get_brightness(bl);
+    //struct drm_panel *base;
+	//struct boe_panel *boe = dev_get_drvdata(&bl->dev);
+	//struct hw_nt51021 *ctx = mipi_dsi_get_drvdata(dsi);
+	u16 brightness = bl->props.brightness;
 	int ret;
 
-	//gpiod_set_value(ctx->disp_en_gpio_vled, !!brightness);
-	//msleep(200);
-	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
-
-	ret = huawei_nt51021_set_brightness(dsi, brightness);
+//	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+	usleep_range(20000, 25000);
+	ret = hw_nt51021_bl(dsi, brightness);
 	if (ret < 0)
 		return ret;
 
-	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+	//dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 
 	return 0;
 }
 
-static const struct backlight_ops huawei_nt51021_bl_ops = {
-	.update_status = huawei_nt51021_bl_update_status,
+static int hw_nt51021_bl_get_intensity(struct backlight_device *bl)
+{
+	return bl->props.brightness;
+}
+
+static const struct backlight_ops hw_nt51021_bl_ops = {
+	.update_status = hw_nt51021_bl_update_status,
+	.get_brightness = hw_nt51021_bl_get_intensity,
 };
 
 static struct backlight_device *
-huawei_nt51021_create_backlight(struct mipi_dsi_device *dsi)
+hw_nt51021_create_backlight(struct mipi_dsi_device *dsi)
 {
-	//struct huawei_nt51021 *ctx = mipi_dsi_get_drvdata(dsi);
+	//struct boe_panel *boe = to_boe_panel(panel);
 	struct device *dev = &dsi->dev;
-	const struct backlight_properties props = {
-		.power = FB_BLANK_UNBLANK,
-		.type = BACKLIGHT_RAW,
-		.brightness = 255,	
-		//.brightness = huawei_nt51021_get_actual_brightness(ctx),
-		.max_brightness = 255,
-	};
+	struct backlight_properties props;
+
+	memset(&props, 0, sizeof(props));
+	props.power = FB_BLANK_UNBLANK,
+	props.type = BACKLIGHT_RAW;
+	props.brightness = 255;
+	props.max_brightness = 255;
 
 	return devm_backlight_device_register(dev, dev_name(dev), dev, dsi,
-					      &huawei_nt51021_bl_ops, &props);
+					      &hw_nt51021_bl_ops, &props);
 }
 
-static int huawei_nt51021_probe(struct mipi_dsi_device *dsi)
+static int boe_panel_add(struct boe_panel *boe)
 {
-	struct device *dev = &dsi->dev;
-	struct huawei_nt51021 *ctx;
-	int ret;
+	struct device *dev = &boe->dsi->dev;
+	int err;
 
-	ctx = devm_kzalloc(dev, sizeof(*ctx), GFP_KERNEL);
-	if (!ctx)
-		return -ENOMEM;
+	boe->vsp = devm_regulator_get(dev, "vsp");
+	if (IS_ERR(boe->vsp))
+		return PTR_ERR(boe->vsp);
 
-	/*ctx->vddio = devm_regulator_get(dev, "vddio");
-	if (IS_ERR(ctx->vddio))
-		return PTR_ERR(ctx->vddio);
+	boe->vsn = devm_regulator_get(dev, "vsn");
+	if (IS_ERR(boe->vsn))
+		return PTR_ERR(boe->vsn);
 
-	ctx->lcd_bias = devm_regulator_get(dev, "bias");
-	if (IS_ERR(ctx->lcd_bias))
-		return PTR_ERR(ctx->lcd_bias);*/
+	boe->vddio = devm_regulator_get(dev, "vddio");
+	if (IS_ERR(boe->vddio))
+		return PTR_ERR(boe->vddio);
 
-	ctx->vddio = devm_regulator_get(dev, "vddio");
-	if (IS_ERR(ctx->vddio))
-		return PTR_ERR(ctx->vddio);
+	boe->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(boe->reset_gpio)) {
+		dev_err(dev, "cannot get reset-gpios %ld\n",
+			PTR_ERR(boe->reset_gpio));
+		return PTR_ERR(boe->reset_gpio);
+	}
 
-	ctx->vsp = devm_regulator_get(dev, "vsp");
-	if (IS_ERR(ctx->vsp))
-		return PTR_ERR(ctx->vsp);
+	boe->blpwr_gpio = devm_gpiod_get(dev, "blpower", GPIOD_OUT_HIGH);
+	if (IS_ERR(boe->blpwr_gpio)) {
+		dev_err(dev, "cannot get bl-gpios %ld\n",
+			PTR_ERR(boe->blpwr_gpio));
+		return PTR_ERR(boe->blpwr_gpio);
+	}
 
-	ctx->vsn = devm_regulator_get(dev, "vsn");
-	if (IS_ERR(ctx->vsn))
-		return PTR_ERR(ctx->vsn);
+	boe->power_gpio = devm_gpiod_get(dev, "power", GPIOD_OUT_HIGH);
+	if (IS_ERR(boe->power_gpio)) {
+		dev_err(dev, "cannot get vdd-gpios %ld\n",
+			PTR_ERR(boe->power_gpio));
+		return PTR_ERR(boe->power_gpio);
+	}
 
-	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(ctx->reset_gpio))
-		return dev_err_probe(dev, PTR_ERR(ctx->reset_gpio),
-				     "Failed to get reset-gpios\n");
+	boe->vled_gpio = devm_gpiod_get(dev, "backlight", GPIOD_OUT_HIGH);
+	if (IS_ERR(boe->vled_gpio)) {
+		dev_err(dev, "cannot get vled-gpios %ld\n",
+			PTR_ERR(boe->vled_gpio));
+		return PTR_ERR(boe->vled_gpio);
+	}
 
-	ctx->disp_en_gpio_vled = devm_gpiod_get(dev, "backlight", GPIOD_OUT_HIGH);
-	if (IS_ERR(ctx->disp_en_gpio_vled))
-		return dev_err_probe(dev, PTR_ERR(ctx->disp_en_gpio_vled),
-				     "Failed to get backlight-gpios\n");
-				     
-	ctx->disp_power_panel = devm_gpiod_get(dev, "power", GPIOD_OUT_HIGH);
-	if (IS_ERR(ctx->disp_power_panel))
-		return dev_err_probe(dev, PTR_ERR(ctx->disp_power_panel),
-				     "Failed to get power-gpios\n");
-
-	ctx->disp_power_backlight = devm_gpiod_get(dev, "blpower", GPIOD_OUT_HIGH);
-	if (IS_ERR(ctx->disp_power_backlight))
-		return dev_err_probe(dev, PTR_ERR(ctx->disp_power_backlight),
-				     "Failed to get bklpower-gpios\n");
-
-	ctx->dsi = dsi; 
-	mipi_dsi_set_drvdata(dsi, ctx);
-
-	dsi->lanes = 4;
-	dsi->format = MIPI_DSI_FMT_RGB888;
-	dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_BURST |
-			  MIPI_DSI_MODE_VIDEO_HSE | MIPI_DSI_MODE_NO_EOT_PACKET;// |
-			  //MIPI_DSI_CLOCK_NON_CONTINUOUS;
-
-	drm_panel_init(&ctx->panel, dev, &huawei_nt51021_panel_funcs,
+	drm_panel_init(&boe->base, dev, &boe_panel_funcs,
 		       DRM_MODE_CONNECTOR_DSI);
-	ctx->panel.prepare_prev_first = true;
+	err = of_drm_get_panel_orientation(dev->of_node, &boe->orientation);
+	if (err < 0) {
+		dev_err(dev, "%pOF: failed to get orientation %d\n", dev->of_node, err);
+		return err;
+	}
 
-	ctx->panel.backlight = huawei_nt51021_create_backlight(dsi);
-	if (IS_ERR(ctx->panel.backlight))
-		return dev_err_probe(dev, PTR_ERR(ctx->panel.backlight),
+	boe->base.backlight = hw_nt51021_create_backlight(boe->dsi);
+	if (IS_ERR(boe->base.backlight))
+		return dev_err_probe(dev, PTR_ERR(boe->base.backlight),
 				     "Failed to create backlight\n");
 
-	drm_panel_add(&ctx->panel);
+	boe->base.funcs = &boe_panel_funcs;
+	boe->base.dev = &boe->dsi->dev;
 
-	ret = mipi_dsi_attach(dsi);
-	if (ret < 0) {
-		dev_err(dev, "Failed to attach to DSI host: %d\n", ret);
-		drm_panel_remove(&ctx->panel);
-		return ret;
-	}
+	drm_panel_add(&boe->base);
 
 	return 0;
 }
 
-static void huawei_nt51021_remove(struct mipi_dsi_device *dsi)
+static int boe_panel_probe(struct mipi_dsi_device *dsi)
 {
-	struct huawei_nt51021 *ctx = mipi_dsi_get_drvdata(dsi);
+	struct boe_panel *boe;
 	int ret;
+	const struct panel_desc *desc;
+
+	boe = devm_kzalloc(&dsi->dev, sizeof(*boe), GFP_KERNEL);
+	if (!boe)
+		return -ENOMEM;
+
+	desc = of_device_get_match_data(&dsi->dev);
+	dsi->lanes = desc->lanes;
+	dsi->format = desc->format;
+	dsi->mode_flags = desc->mode_flags;
+	boe->desc = desc;
+	boe->dsi = dsi;
+	ret = boe_panel_add(boe);
+	if (ret < 0)
+		return ret;
+
+	mipi_dsi_set_drvdata(dsi, boe);
+
+	ret = mipi_dsi_attach(dsi);
+	if (ret)
+		drm_panel_remove(&boe->base);
+
+	return ret;
+}
+
+static void boe_panel_shutdown(struct mipi_dsi_device *dsi)
+{
+	struct boe_panel *boe = mipi_dsi_get_drvdata(dsi);
+
+	drm_panel_disable(&boe->base);
+	drm_panel_unprepare(&boe->base);
+}
+
+static void boe_panel_remove(struct mipi_dsi_device *dsi)
+{
+	struct boe_panel *boe = mipi_dsi_get_drvdata(dsi);
+	int ret;
+
+	boe_panel_shutdown(dsi);
 
 	ret = mipi_dsi_detach(dsi);
 	if (ret < 0)
-		dev_err(&dsi->dev, "Failed to detach from DSI host: %d\n", ret);
+		dev_err(&dsi->dev, "failed to detach from DSI host: %d\n", ret);
 
-	drm_panel_remove(&ctx->panel);
+	if (boe->base.dev)
+		drm_panel_remove(&boe->base);
 }
 
-static const struct of_device_id huawei_nt51021_of_match[] = {
-	{ .compatible = "huawei,boe-nt51021" },
+static const struct of_device_id boe_of_match[] = {
+	{ .compatible = "huawei,boe-nt51021",
+	  .data = &boe_nt51021_10_desc
+	},
+	{ .compatible = "huawei,cmi-nt51021",
+	  .data = &cmi_nt51021_10_desc
+	},
 	{ /* sentinel */ }
 };
-MODULE_DEVICE_TABLE(of, huawei_nt51021_of_match);
+MODULE_DEVICE_TABLE(of, boe_of_match);
 
-static struct mipi_dsi_driver huawei_nt51021_driver = {
-	.probe = huawei_nt51021_probe,
-	.remove = huawei_nt51021_remove,
+static struct mipi_dsi_driver boe_panel_driver = {
 	.driver = {
 		.name = "panel-huawei-nt51021",
-		.of_match_table = huawei_nt51021_of_match,
+		.of_match_table = boe_of_match,
 	},
+	.probe = boe_panel_probe,
+	.remove = boe_panel_remove,
+	.shutdown = boe_panel_shutdown,
 };
-module_mipi_dsi_driver(huawei_nt51021_driver);
+module_mipi_dsi_driver(boe_panel_driver);
 
-MODULE_AUTHOR("linux-mdss-dsi-panel-driver-generator <fix@me>"); // FIXME
-MODULE_DESCRIPTION("DRM driver for huawei_nt51021_VIDEO");
-MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Jitao Shi <jitao.shi@mediatek.com>");
+MODULE_DESCRIPTION("Huawei nt51021 1200x1920 video mode panel driver");
+MODULE_LICENSE("GPL v2");
