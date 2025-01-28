@@ -28,7 +28,10 @@
 		stdout-path = "serial0";
 	};
 
-/*	reserved-memory {
+	reserved-memory {
+		/delete-node/ reserved@86680000;
+		/delete-node/ rmtfs@86700000;
+
 		cont_splash_mem: framebuffer@83000000 {
 			compatible = "removed-dma-pool";
 			reg = <0x0 0x83000000 0x0 0x1400000>;
@@ -39,7 +42,29 @@
 			reg = <0x0 0x84400000 0x0 0x1C00000>;
 			no-map;
 		};
-	};*/
+
+		reserved@86680000 {
+			reg = <0x0 0x86680000 0x0 0x10000>;
+			no-map;
+		};
+
+		rmtfs: rmtfs@86690000 {
+			compatible = "qcom,rmtfs-mem";
+			reg = <0x0 0x86690000 0x0 0x150000>;
+			no-map;
+
+			qcom,client-id = <1>;
+		};
+
+		ramoops@8cb00000 {
+			compatible = "ramoops";
+			reg = <0x0 0x8cb00000 0x0 0x200000>;
+
+			record-size = <0x10000>;
+			console-size = <0x100000>;
+			ftrace-size = <0>;
+		};
+	};
 
 	battery: battery {
 		compatible = "simple-battery";
@@ -445,7 +470,8 @@
 };
 
 &mpss_mem {
-	reg = <0x0 0x86800000 0x0 0x5600000>;
+	reg = <0x0 0x86800000 0x0 0x5500000>;
+	//reg = <0x0 0x86800000 0x0 0x5600000>;
 	//reg = <0x0 0x86800000 0x0 0x2b00000>;
 };
 
