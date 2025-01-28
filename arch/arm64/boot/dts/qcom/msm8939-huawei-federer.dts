@@ -25,10 +25,10 @@
 	};
 
 	chosen {
-		stdout-path = "serial0:115200n8";
+		stdout-path = "serial0";
 	};
 
-	reserved-memory {
+/*	reserved-memory {
 		cont_splash_mem: framebuffer@83000000 {
 			compatible = "removed-dma-pool";
 			reg = <0x0 0x83000000 0x0 0x1400000>;
@@ -39,7 +39,7 @@
 			reg = <0x0 0x84400000 0x0 0x1C00000>;
 			no-map;
 		};
-	};
+	};*/
 
 	battery: battery {
 		compatible = "simple-battery";
@@ -347,7 +347,7 @@
 			"FLASH_NOW";
 	};*/
 };
-
+/*
 &blsp_i2c4 {
 	status = "okay";
 	charger: bq24296@6b {
@@ -368,7 +368,7 @@
 		//	regulator-max-microvolt = <5000000>;
 		//};
 	};
-};
+};*/
 
 &blsp_i2c5 {
 	status = "okay";
@@ -453,7 +453,7 @@
 	status = "okay";
 
 	monitored-battery = <&battery>;
-	power-supplies = <&charger>;
+	//power-supplies = <&charger>;
 };
 
 &pm8916_codec {
@@ -657,17 +657,17 @@
 };
 
 &usb {
-	//extcon = <&usb_id>, <&usb_id>;
-	extcon = <&charger>, <&usb_id>;
-	vbus-supply = <&usb_otg_vbus>;
+	extcon = <&usb_id>, <&usb_id>;
+	//extcon = <&charger>, <&usb_id>;
+	//vbus-supply = <&usb_otg_vbus>;
 	//usb-role-switch;
 
 	status = "okay";
 };
 
 &usb_hs_phy {
-	//extcon = <&usb_id>;
-	extcon = <&charger>;
+	extcon = <&usb_id>;
+	//extcon = <&charger>;
 };
 
 &venus_mem {
