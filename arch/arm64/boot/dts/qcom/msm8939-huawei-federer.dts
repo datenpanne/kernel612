@@ -178,32 +178,6 @@
 		regulator-boot-on; // allows fb console to show up briefly at boot without always-on
 	};
 
-	/*headphones_switch: audio-switch {
-		compatible = "simple-audio-amplifier";
-		//VCC-supply = <&speaker_boost_pwr>;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&headphones_switch_default>;
-
-		enable-gpios = <&tlmm 0 GPIO_ACTIVE_HIGH>; //vdd gpio
-		sound-name-prefix = "Headphones Switch";
-	};*/
-
-	speaker_amp: audio-amplifier {
-		compatible = "simple-audio-amplifier";
-		VCC-supply = <&speaker_swich_reg>;
-
-		pinctrl-names = "default", "sleep";
-		pinctrl-0 = <&speaker_amp_default>;
-		pinctrl-1 = <&speaker_amp_sleep>;
-
-		enable-gpios = <&tlmm 3 GPIO_ACTIVE_HIGH>; //enable gpio
-		//startup-delay-us = <100000>; //delay 100ms
-
-		//gpios = <&tlmm 0 GPIO_ACTIVE_HIGH>, <&tlmm 1 GPIO_ACTIVE_HIGH>, <&tlmm 2 GPIO_ACTIVE_HIGH>;
-		sound-name-prefix = "Speaker Switch";
-	};
-
 	usb_id: usb-id {
 		compatible = "linux,extcon-usb-gpio";
 		id-gpios = <&tlmm 117 GPIO_ACTIVE_HIGH>;
@@ -267,28 +241,6 @@
 		};
 	};
 };
-/*
-&blsp_i2c4 {
-	status = "okay";
-	charger: bq24296@6b {
-		compatible = "ti,bq24296";
-		reg = <0x6b>;
-		interrupt-parent = <&tlmm>;
-		interrupts = <62 IRQ_TYPE_EDGE_FALLING>;
-		charge-enable-gpios = <&tlmm 108 GPIO_ACTIVE_LOW>;
-		pinctrl-names = "default", "sleep";
-		pinctrl-0 = <&bq24192_charger_default &bq24192_ce_default>;
-		pinctrl-1 = <&bq24192_charger_sleep>;
-		monitored-battery = <&battery>;
-		ti,system-minimum-microvolt = <3350000>;
-		omit-battery-class;
-		usb_otg_vbus: usb-otg-vbus {};
-		//usb_otg_vbus: usb-otg-vbus {
-		//	regulator-min-microvolt = <4900000>;
-		//	regulator-max-microvolt = <5000000>;
-		//};
-	};
-};*/
 
 &blsp_i2c5 {
 	status = "okay";
@@ -585,36 +537,6 @@
 	};
 };
 
-/*&sound {
-	status = "okay";*/
-	/*pinctrl-names = "default", "sleep";
-
-	pinctrl-0 = <&cdc_pdm_default>;
-	pinctrl-1 = <&cdc_pdm_sleep>;*/
-
-	/*model = "wt86528";
-	widgets =
-		"Speaker", "Speaker",
-		"Headphone", "Headphones";
-	pin-switches = "Speaker";
-	//pin-switches = "Speaker", "Headphones";
-	audio-routing =*/
-		/*"Speaker", "Speaker Switch OUTL",
-		"Speaker", "Speaker Switch OUTR",
-		"Speaker Switch INL", "HPH_L",
-		"Speaker Switch INR", "HPH_R",
-		"Headphones", "Headphones Switch OUTL",
-		"Headphones", "Headphones Switch OUTR",
-		"Headphones Switch INL", "HPH_L",
-		"Headphones Switch INR", "HPH_R",*/
-		/*"Headphones", "HPH_L",
-		"Headphones", "HPH_R",
-		"AMIC1", "MIC BIAS External1",
-		"AMIC2", "MIC BIAS External2",
-		"AMIC3", "MIC BIAS External1";
-	aux-devs = <&speaker_amp>;//, <&headphones_switch>;
-};*/
-
 &usb {
 	extcon = <&usb_id>, <&usb_id>;
 	//extcon = <&charger>, <&usb_id>;
@@ -648,27 +570,6 @@
 &tlmm {
 	accel_int_default: accel-int-default-state {
 		pins = "gpio115";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-disable;
-	};
-
-	bq24192_charger_default: bq24196-charger-default-state  {
-		pins = "gpio62";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-pull-up;
-	};
-
-	bq24192_charger_sleep: bq24196-charger-sleep-state  {
-		pins = "gpio62";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-pull-up;
-	};
-
-	bq24192_ce_default: bq24196-ce-default-state  {
-		pins = "gpio108";
 		function = "gpio";
 		drive-strength = <2>;
 		bias-disable;
@@ -717,13 +618,6 @@
 		bias-disable;
 	};
 
-	mag_reset_default: mag-reset-default-state {
-		pins = "gpio36";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-disable;
-	};
-
 	mdss_default: mdss-default-state {
 		pins = "gpio25";
 		function = "gpio";
@@ -757,63 +651,6 @@
 	sdc2_cd_default: sdc2-cd-default-state {
 		pins = "gpio38";
 		function = "gpio";
-		drive-strength = <2>;
-		bias-disable;
-	};
-
-	speaker_amp_default: speaker-amp-default-state {
-		pins = "gpio3";//, "gpio1", "gpio2", "gpio0";
-		function = "gpio";
-
-		drive-strength = <8>;
-		bias-disable;
-	};
-
-	speaker_amp_sleep: speaker-amp-sleep-state {
-		pins = "gpio3";
-		function = "gpio";
-
-		drive-strength = <2>;
-		bias-disable;
-	};
-
-	speaker_boost_default: speaker-boost-default-state {
-		pins = "gpio2";
-		function = "gpio";
-
-		drive-strength = <8>;
-		bias-disable;
-	};
-
-	speaker_boost_sleep: speaker-boost-sleep-state {
-		pins = "gpio2";
-		function = "gpio";
-
-		drive-strength = <2>;
-		bias-pull-down;
-	};
-
-	speaker_vdd_default: speaker-vdd-default-state {
-		pins = "gpio0";
-		function = "gpio";
-
-		drive-strength = <2>;
-		bias-disable;
-	};
-
-	speaker_switch_default: speaker-switch-default-state {
-		pins = "gpio1";
-		function = "gpio";
-
-		drive-strength = <2>;
-		bias-disable;
-		//bias-pull-down;
-	};
-
-	speaker_switch_sleep: speaker-switch-sleep-state {
-		pins = "gpio1";
-		function = "gpio";
-
 		drive-strength = <2>;
 		bias-disable;
 	};
