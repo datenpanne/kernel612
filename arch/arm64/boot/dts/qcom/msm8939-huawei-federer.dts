@@ -49,14 +49,9 @@
 
 		rmtfs@86690000 {
 			compatible = "qcom,rmtfs-mem";
-			reg = <0x0 0x86690000 0x0 0x100000>;
+			reg = <0x0 0x86690000 0x0 0x150000>;
 			no-map;
 			qcom,client-id = <1>;
-		};
-
-		reserved@86790000 {
-			reg = <0x0 0x86790000 0x0 0x50000>;
-			no-map;
 		};
 
 		qseecom_mem: qseecom@84a00000 {
