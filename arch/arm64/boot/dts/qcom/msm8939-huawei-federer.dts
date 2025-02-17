@@ -17,10 +17,9 @@
 	chassis-type = "tablet";
 
 	aliases {
-		mmc0 = &sdhc_1; /* eMMC */
-		mmc1 = &sdhc_2; /* SD card */
+		mmc0 = &sdhc_1; /* SDC1 eMMC slot */
+		mmc1 = &sdhc_2; /* SDC2 SD card slot */
 		serial0 = &blsp_uart2;
-		//i2c0 = &blsp_i2c2;
 	};
 
 	chosen {
@@ -163,7 +162,6 @@
 		compatible = "regulator-fixed";
 		regulator-name = "vsp";
 		//regulator-name = "volregP";
-		//vin-supply = <&pm8916_l16>;
 		regulator-min-microvolt = <5400000>;
 		regulator-max-microvolt = <5400000>;
 		regulator-always-on;
@@ -174,70 +172,10 @@
 		compatible = "regulator-fixed";
 		regulator-name = "vsn";
 		//regulator-name = "volregN";
-		//vin-supply = <&pm8916_l16>;
 		regulator-min-microvolt = <5400000>;
 		regulator-max-microvolt = <5400000>;
 		regulator-always-on;
 		regulator-boot-on; // allows fb console to show up briefly at boot without always-on
-	};
-
-	/*speaker_vdd_reg: regulator-speaker-vdd {
-		compatible = "regulator-fixed";
-		regulator-name = "speaker_vdd";
-
-		gpios = <&tlmm 0 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
-		//startup-delay-us = <200000>; //delay 200
-		pinctrl-names = "default";
-		pinctrl-0 = <&speaker_vdd_default>;
-	};*/
-
-	/*speaker_boost_pwr: regulator-sp-pwr {
-		compatible = "regulator-fixed";
-		regulator-name = "speaker_pwr";
-		regulator-min-microvolt = <5000000>;
-		regulator-max-microvolt = <5000000>;
-		regulator-always-on;
-	};*/
-
-	speaker_boost_reg: regulator-sp-boost {
-		compatible = "regulator-fixed";
-		regulator-name = "speaker_boost";
-		vin-supply = <&speaker_vdd>;
-
-		gpios = <&tlmm 2 GPIO_ACTIVE_HIGH>; //boost gpio
-		enable-active-high;
-
-		pinctrl-names = "default", "sleep";
-		pinctrl-0 = <&speaker_boost_default>;// &speaker_vdd_default>;
-		pinctrl-1 = <&speaker_boost_sleep>;
-	};
-
-	speaker_vdd: audio-vdd {
-		compatible = "regulator-fixed";
-		//vin-supply = <&speaker_boost_reg>;
-		regulator-name = "speaker_vdd";
-		//regulator-always-on;
-
-		gpios = <&tlmm 0 GPIO_ACTIVE_HIGH>; //vdd gpio
-		enable-active-high;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&speaker_vdd_default>;
-	};
-
-	speaker_swich_reg: regulator-sp-swich {
-		compatible = "regulator-fixed";
-		regulator-name = "sp_swich";
-		vin-supply = <&speaker_boost_reg>;
-		//regulator-always-on;
-
-		gpios = <&tlmm 1 GPIO_ACTIVE_HIGH>; //switch in gpio
-		enable-active-high;
-		//startup-delay-us = <100000>; //delay 100
-		pinctrl-names = "default", "sleep";
-		pinctrl-0 = <&speaker_switch_default>;
-		pinctrl-1 = <&speaker_switch_sleep>;
 	};
 
 	/*headphones_switch: audio-switch {
@@ -266,29 +204,6 @@
 		sound-name-prefix = "Speaker Switch";
 	};
 
-	/*speaker_boost: audio-boost {
-		compatible = "simple-audio-amplifier";
-		VCC-supply = <&speaker_boost_pwr>;
-
-		pinctrl-names = "default", "sleep";
-		pinctrl-0 = <&speaker_boost_default>;
-		pinctrl-1 = <&speaker_boost_sleep>;
-
-		enable-gpios = <&tlmm 2 GPIO_ACTIVE_HIGH>; //boost gpio
-		//sound-name-prefix = "Speaker Boost";
-	};
-
-	speaker_switch: audio-switch {
-		compatible = "simple-audio-amplifier";
-		VCC-supply = <&speaker_amp>;
-
-		pinctrl-names = "default";
-		pinctrl-0 = <&speaker_switch_default>;
-
-		enable-gpios = <&tlmm 1 GPIO_ACTIVE_HIGH>; //switch gpio
-		//sound-name-prefix = "Speaker Switch";
-	};*/
-
 	usb_id: usb-id {
 		compatible = "linux,extcon-usb-gpio";
 		id-gpios = <&tlmm 117 GPIO_ACTIVE_HIGH>;
@@ -316,29 +231,41 @@
 	light@38 {
 		compatible = "rohm,bh1745";
 		reg = <0x38>;
+
+		interrupt-parent = <&tlmm >;
+		interrupts = <113 IRQ_TYPE_LEVEL_LOW>;
 		vdd-supply = <&pm8916_l17>;
-		vio-supply = <&pm8916_l6>;
+		//vio-supply = <&pm8916_l6>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&light_irq_default>;
 	};
 
-	/*flash_lm3642:qcom,led-flash@63 { //original camera flash
+	flash-led-controller@63 {
+		compatible = "leds-lm3642";
 		reg = <0x63>;
-		cell-index = <0>;
-		qcom,slave-id = <0xC6 0x00 0x0011>;
-		compatible = "ti,lm3642";
-		label = "lm3642";
-		qcom,flash-type = <1>;
-		pinctrl-names = "cam_flash_default","cam_flash_suspend";
-		pinctrl-0 = <&lm3642_en_default>;
-		pinctrl-1 = <&lm3642_en_suspend>;
-		gpios = <&msm_gpio 86 0>,
-			<&msm_gpio 31 0>;
-		qcom,gpio-flash-en = <0>;
-		qcom,gpio-flash-now = <1>;
-		qcom,gpio-req-tbl-num = <0 1>;
-		qcom,gpio-req-tbl-flags = <0 0>;
-		qcom,gpio-req-tbl-label = "FLASH_EN",
-			"FLASH_NOW";
-	};*/
+
+		pinctrl-0 = <&camera_rear_flash_default>;
+		pinctrl-1 = <&camera_rear_flash_sleep>;
+		pinctrl-names = "default","sleep";
+
+		//gpios = <&tlmm 86 GPIO_ACTIVE_HIGH>,<&tlmm 31 GPIO_ACTIVE_HIGH >;
+
+		flash_led {
+			linux,default-trigger = "flash";
+			function = LED_FUNCTION_FLASH;
+			color = <LED_COLOR_ID_WHITE>;
+			gpios = <&tlmm 86 GPIO_ACTIVE_HIGH>;
+			led-sources = <0>, <1>;
+		};
+		torch_led {
+			linux,default-trigger = "torch";
+			function = LED_FUNCTION_TORCH;
+			color = <LED_COLOR_ID_WHITE>;
+			gpios = <&tlmm 31 GPIO_ACTIVE_HIGH >;
+			led-sources = <0>, <0>;
+		};
+	};
 };
 /*
 &blsp_i2c4 {
@@ -747,6 +674,20 @@
 		bias-disable;
 	};
 
+	camera_rear_flash_default: camera-rear-flash-default-state {
+		pins = "gpio31", "gpio86";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+
+	camera_rear_flash_sleep: camera-rear-flash-sleep-state {
+		pins = "gpio31", "gpio86";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-down;
+	};
+
 	gpio_hall_sensor_default: gpio-hall-sensor-default-state {
 		pins = "gpio69";
 		function = "gpio";
@@ -764,6 +705,14 @@
 	gpio_leds_default: gpio-leds-default-state {
 		pins = "gpio8", "gpio9", "gpio10";
 		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+
+	light_irq_default: accel-irq-default-state {
+		pins = "gpio113";
+		function = "gpio";
+
 		drive-strength = <2>;
 		bias-disable;
 	};
