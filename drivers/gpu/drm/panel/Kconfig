@@ -323,6 +323,15 @@ config DRM_PANEL_JDI_R63452
 	  Say Y here if you want to enable support for the JDI R63452
 	  DSI command mode panel as found in Xiaomi Mi 5 Devices.
 
+config DRM_PANEL_JDI_R69429_PELE
+	tristate "JDI R69429 WUXGA DSI panel"
+	depends on OF
+	depends on DRM_MIPI_DSI
+	depends on BACKLIGHT_CLASS_DEVICE
+	help
+	  Say Y here if you want to enable support for the JDI R69429
+	  DSI command mode panel as found in MediaPad T2 7 Devices.
+
 config DRM_PANEL_KHADAS_TS050
 	tristate "Khadas TS050 panel"
 	depends on OF
