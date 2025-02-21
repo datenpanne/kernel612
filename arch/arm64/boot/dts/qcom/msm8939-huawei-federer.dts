@@ -21,6 +21,7 @@
 		mmc0 = &sdhc_1; /* SDC1 eMMC slot */
 		mmc1 = &sdhc_2; /* SDC2 SD card slot */
 		serial0 = &blsp_uart2;
+		i2c0 = &blsp_i2c2;
 	};
 
 	chosen {
@@ -28,6 +29,17 @@
 	};
 
 	reserved-memory {
+		cont_splash_mem: framebuffer@83000000 {
+			compatible = "removed-dma-pool";
+			reg = <0x0 0x83000000 0x0 0x1400000>;
+			no-map;
+		};
+
+		reserved@84400000 {
+			reg = <0x0 0x84400000 0x0 0x1C00000>;
+			no-map;
+		};
+
 		tz-hwlog@8c700000 {
 			reg = <0x0 0x8c700000 0x0 0x400000>;
 			no-map;
