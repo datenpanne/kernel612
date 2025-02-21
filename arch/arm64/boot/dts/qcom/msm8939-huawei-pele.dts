@@ -24,9 +24,18 @@
 	};
 
 	reserved-memory {
-		qseecom_mem: qseecom@84a00000 {
-			reg = <0x0 0x84a00000 0x0 0x1600000>;
+		tz-hwlog@8c700000 {
+			reg = <0x0 0x8c700000 0x0 0x400000>;
 			no-map;
+		};
+
+		ramoops@8cb00000 {
+			compatible = "ramoops";
+			reg = <0x0 0x8cb00000 0x0 0x200000>;
+
+			record-size = <0x10000>;
+			console-size = <0x100000>;
+			ftrace-size = <0>;
 		};
 	};
 
